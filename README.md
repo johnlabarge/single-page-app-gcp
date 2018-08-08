@@ -58,58 +58,11 @@ kubectl plugin install-cloud-endpoints-controller
 
 ## Task 1 - Deploy Elastic Search
 
-helm install --name my-release incubator/elasticsearch -f api/es-values.yml
+1. helm repo add incubator http://storage.googleapis.com/kubernetes-charts-incubator
+2. helm install --name spa-search-api incubator/elasticsearch -f api/es-values.yml
+3. Verify elastic search is running #TODO
+4. Build Elastic Search Index
 
-## Task 2 - Generate self-signed certificate with cert-manager
-
-1. Install the cert-manager chart and clusterissuer using the kubectl plugin:
-
-```
-kubectl plugin install-cert-manager
-```
-
-3. Generate CA key and cert:
-
-```
-PROJECT=$(gcloud config get-value project)
-COMMON_NAME="spa-api.endpoints.${PROJECT}.cloud.goog"
-
-openssl genrsa -out ca.key 2048
-openssl req -x509 -new -nodes -key ca.key -subj "/CN=${COMMON_NAME}" -days 3650 -reqexts v3_req -extensions v3_ca -out ca.crt
-
-kubectl create secret tls ca-key-pair --cert=ca.crt --key=ca.key
-```
-
-
-3. Create the certificate:
-
-```
-PROJECT=$(gcloud config get-value project)
-COMMON_NAME="spa-api.endpoints.${PROJECT}.cloud.goog"
-
-cat <<EOF | kubectl apply -f -
-apiVersion: certmanager.k8s.io/v1alpha1
-kind: Certificate
-metadata:
-  name: spa-api-ingress
-spec:
-  secretName: spa-api-ingress-tls
-  issuerRef:
-    name: ca-issuer
-    # We can reference ClusterIssuers by changing the kind here.
-    # The default value is Issuer (i.e. a locally namespaced Issuer)
-    kind: Issuer
-  commonName: ${COMMON_NAME}
-  dnsNames:
-  - ${COMMON_NAME}
-EOF
-```
-
-4. Wait for the certificate:
-
-```
-(until kubectl get secret iap-tutorial-ingress-tls 2>/dev/null; do echo "Waiting for certificate..." ; sleep 2; done)
-```
 ## Task 3 - Configure OAuth consent screen
 
 1. Go to the [OAuth consent screen](https://console.cloud.google.com/apis/credentials/consent).
@@ -133,7 +86,7 @@ EOF
     Make sure to add a Google account that you have access to.
 
 
-## Task 5 - Deploy iap-ingress chart
+## Task 6 - Deploy iap-ingress chart
 
 3. Create values file for chart:
 
@@ -183,6 +136,8 @@ COMMON_NAME="spa-api.endpoints.${PROJECT}.cloud.goog"
 1. Delete the chart:
 
 ```
+helm delete --purge spa-search-api
+kubectl delete pvc -l release=my-release,component=data
 helm delete --purge iap-tutorial-ingress
 ```
 
