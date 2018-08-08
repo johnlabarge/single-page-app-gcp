@@ -58,5 +58,138 @@ kubectl plugin install-cloud-endpoints-controller
 
 ## Task 1 - Deploy Elastic Search
 
+helm install --name my-release incubator/elasticsearch -f api/es-values.yml
 
-<TODO> 
+## Task 2 - Generate self-signed certificate with cert-manager
+
+1. Install the cert-manager chart and clusterissuer using the kubectl plugin:
+
+```
+kubectl plugin install-cert-manager
+```
+
+3. Generate CA key and cert:
+
+```
+PROJECT=$(gcloud config get-value project)
+COMMON_NAME="spa-api.endpoints.${PROJECT}.cloud.goog"
+
+openssl genrsa -out ca.key 2048
+openssl req -x509 -new -nodes -key ca.key -subj "/CN=${COMMON_NAME}" -days 3650 -reqexts v3_req -extensions v3_ca -out ca.crt
+
+kubectl create secret tls ca-key-pair --cert=ca.crt --key=ca.key
+```
+
+
+3. Create the certificate:
+
+```
+PROJECT=$(gcloud config get-value project)
+COMMON_NAME="spa-api.endpoints.${PROJECT}.cloud.goog"
+
+cat <<EOF | kubectl apply -f -
+apiVersion: certmanager.k8s.io/v1alpha1
+kind: Certificate
+metadata:
+  name: spa-api-ingress
+spec:
+  secretName: spa-api-ingress-tls
+  issuerRef:
+    name: ca-issuer
+    # We can reference ClusterIssuers by changing the kind here.
+    # The default value is Issuer (i.e. a locally namespaced Issuer)
+    kind: Issuer
+  commonName: ${COMMON_NAME}
+  dnsNames:
+  - ${COMMON_NAME}
+EOF
+```
+
+4. Wait for the certificate:
+
+```
+(until kubectl get secret iap-tutorial-ingress-tls 2>/dev/null; do echo "Waiting for certificate..." ; sleep 2; done)
+```
+## Task 3 - Configure OAuth consent screen
+
+1. Go to the [OAuth consent screen](https://console.cloud.google.com/apis/credentials/consent).
+2. Under __Email address__, select the email address you want to display as a public contact. This must be your email address, or a Google Group you own.
+3. Enter the __Product name__ you would like to display.
+4. Add any optional details you’d like.
+5. Click __Save__.
+
+## Task 4 - Set up IAP access
+
+1. Go to the [Identity-Aware Proxy page](https://console.cloud.google.com/security/iap/project).
+2. On the right side panel, next to __Access__, click __Add__.
+3. In the __Add members__ dialog that appears, add the email addresses of groups or individuals to whom you want to grant the __IAP-Secured Web App User__ role for the project
+
+    The following kinds of accounts can be members:
+    - __Google Accounts__: user@gmail.com
+    - __Google Groups__: admins@googlegroups.com
+    - __Service accounts__: server@example.gserviceaccount.com
+    - __G Suite domains__: example.com
+
+    Make sure to add a Google account that you have access to.
+
+
+## Task 5 - Deploy iap-ingress chart
+
+3. Create values file for chart:
+
+
+```
+cat > iap-values.yaml <<EOF
+projectID: $(gcloud config get-value project)
+endpointServiceName: spa-api
+targetServiceName: search-api
+targetServicePort: 8080
+oauthSecretName: iap-oauth
+tlsSecretName: iap-tutorial-ingress-tls
+esp:
+  enabled: true
+EOF
+```
+
+2. Deploy chart to create IAP aware ingress resource:
+
+```
+ helm github install \
+    --name api-iap \
+    --repo https://github.com/danisla/cloud-endpoints-controller.git \
+    --ref master \
+    --path examples/iap-esp/charts/iap-ingress
+    -f iap-values.yaml
+```
+
+3. Wait for the load balancer to be provisioned:
+
+```
+PROJECT=$(gcloud config get-value project)
+COMMON_NAME="spa-api.endpoints.${PROJECT}.cloud.goog"
+
+(until [[ $(curl -sfk -w "%{http_code}" https://${COMMON_NAME}) == "302" ]]; do echo "Waiting for LB with IAP..."; sleep 2; done)
+```
+
+
+## Task 5 Deploy 
+4. Open your browser to `https://spa-api.endpoints.PROJECT_ID.cloud.goog` replacing `PROJECT_ID` with your project id.
+5. Login with your Google account and verify the the sample app is show.
+
+> NOTE: It may take 10-15 minutes for the load balancer to be provisioned.
+
+## Task 6 - Cleanup
+
+1. Delete the chart:
+
+```
+helm delete --purge iap-tutorial-ingress
+```
+
+> This will trigger the load balancer cleanup. Wait a few moments before continuing.
+
+2. Delete the GKE cluster:
+
+```
+gcloud container clusters delete dev --zone us-central1-c
+```
