@@ -12,12 +12,13 @@ mapping = {
     "mappings": {
     "hndoc":{
         "properties": {
+        	"item_id": {"type":"text"},
             "title": {"type": "text"},
             "text": {"type":"text" },
             "submission_time": {"type": "date",
-                                "format": "yyyy-MM-dd'T'HH:mm'Z'"},
+                                "format": "yyyy-MM-dd HH:mm:ss"},
             "time": {"type": "date",
-                                "format": "yyyy-MM-dd'T'HH:mm'Z'"},
+                                "format": "yyyy-MM-dd HH:mm:ss"},
             "by": {"type": "text"},
             "dead": {"type": "boolean"},
             "parent": {"type": "text"},
@@ -26,11 +27,6 @@ mapping = {
             "score": {"type":"integer" },
             "parts": {"type": "text"},
             "descendants": {"type": "text"},
-            "kids": { 
-                "properteis": {
-                    "dynamic": "true"
-                }
-            }
         }
     }
   }
@@ -43,16 +39,16 @@ class DocumentEncoder(json.JSONEncoder):
                      "text": obj.text, 
                      "deleted": obj.deleted,
                      "by": obj.by,
-                     "submission_time": obj.submission_time.isoformat(), 
+                     "submission_time": obj.submission_time.strftime('%Y-%m-%d %H:%M:%S'), 
                      "dead" : obj.dead,
                      "parent" : obj.parent, 
                      "poll": obj.poll,
                      "score": obj.score, 
                      "title": obj.title, 
                      "descendants": obj.descendants, 
-                     "time": obj.time.isoformat(), 
+                     "time": obj.time.strftime('%Y-%m-%d %H:%M:%S'), 
                     } 
-            if obj.kids: 
+            if obj.kids and len(obj.kids) > 0:
                 kids = [DocumentEncoder().encode(kid) for kid in obj.kids]
                 retDict['kids'] = kids 
             return retDict
@@ -87,10 +83,12 @@ def get_search_documents():
     for parent in parents:
         parent.kids = load_kids(hn,parent,comments) 
     return parents 
+print("\n\n\nINDEXING HACKERNEWS DOCS") 
 es = Elasticsearch(HOST)     
 es.indices.create(index="hnindex",body=mapping)
 search_documents=get_search_documents()
 for document in search_documents: 
-    es.index(index="hnindex",body=DocumentEncoder().encode(document))
+#  print(document.kids)
+  es.index(index="hnindex",body=DocumentEncoder().encode(document),doc_type="hndoc")
 # documents = [DocumentEncoder().encode(parent) for parent in parents]    
 #     return documents
